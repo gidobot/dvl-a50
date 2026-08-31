@@ -50,8 +50,8 @@ LifecycleDVL::on_configure(const rclcpp_lifecycle::State &)
 {
     RCLCPP_INFO(get_logger(), "on_configure() is called.");
     timer_ = this->create_wall_timer(std::chrono::milliseconds(50), std::bind(&LifecycleDVL::on_timer, this));
-    dvl_pub_report = this->create_publisher<dvl_msgs::msg::DVL>("dvl/data", 10);
-    dvl_pub_pos = this->create_publisher<dvl_msgs::msg::DVLDR>("dvl/position", 10);
+    dvl_pub_report = this->create_publisher<marine_acoustic_msgs::msg::Dvl>("dvl/velocity", 10);
+    dvl_pub_pos = this->create_publisher<nav_msgs::msg::Odometry>("dvl/position", 10);
     
 
     //--- TCP/IP SOCKET ---- 
@@ -204,57 +204,33 @@ void LifecycleDVL::on_timer()
 		
 		dvl.header.stamp = rclcpp_lifecycle::LifecycleNode::now();
 		dvl.header.frame_id = "dvl_A50_report_link";
-		//std::cout << std::setw(4) << json_data << std::endl;
-		
-		dvl.time = double(json_data["time"]);
+		dvl.velocity_mode = marine_acoustic_msgs::msg::Dvl::DVL_MODE_BOTTOM;
+		dvl.dvl_type = marine_acoustic_msgs::msg::Dvl::DVL_TYPE_PISTON;
+
 		dvl.velocity.x = double(json_data["vx"]);
 		dvl.velocity.y = double(json_data["vy"]);
 		dvl.velocity.z = double(json_data["vz"]);
-		dvl.fom = double(json_data["fom"]);
-                current_altitude = double(json_data["altitude"]);
-		dvl.velocity_valid = json_data["velocity_valid"];
-		    
-		if(current_altitude >= 0.0 && dvl.velocity_valid)
-		{
-		    dvl.altitude = current_altitude;
-		    old_altitude = current_altitude;
+		dvl.beam_velocities_valid = json_data["velocity_valid"];
+		dvl.altitude = double(json_data["altitude"]);
+
+		// NO old-altitude fallback. This component used to hold the previous
+		// altitude when the current one was invalid; the maintained driver removed
+		// that because it does not report what the device actually said, and a
+		// consumer cannot tell a held value from a fresh one.
+
+		uint8_t good = 0;
+		bool all_ranges = true;
+		for (size_t i = 0; i < 4 && i < json_data["transducers"].size(); ++i) {
+			const auto& t = json_data["transducers"][i];
+			const bool valid = t["beam_valid"];
+			dvl.beam_velocity[i] = static_cast<float>(double(t["velocity"]));
+			dvl.range[i] = double(t["distance"]);
+			dvl.beam_quality[i] = static_cast<float>(double(t["rssi"]));
+			if (valid) { ++good; } else { all_ranges = false; }
 		}
-		else
-		    dvl.altitude = old_altitude;
+		dvl.num_good_beams = good;
+		dvl.beam_ranges_valid = all_ranges;
 
-
-		dvl.status = json_data["status"];
-		dvl.form = json_data["format"];
-			
-		beam0.id = json_data["transducers"][0]["id"];
-		beam0.velocity = double(json_data["transducers"][0]["velocity"]);
-		beam0.distance = double(json_data["transducers"][0]["distance"]);
-		beam0.rssi = double(json_data["transducers"][0]["rssi"]);
-		beam0.nsd = double(json_data["transducers"][0]["nsd"]);
-		beam0.valid = json_data["transducers"][0]["beam_valid"];
-			
-		beam1.id = json_data["transducers"][1]["id"];
-		beam1.velocity = double(json_data["transducers"][1]["velocity"]);
-		beam1.distance = double(json_data["transducers"][1]["distance"]);
-		beam1.rssi = double(json_data["transducers"][1]["rssi"]);
-		beam1.nsd = double(json_data["transducers"][1]["nsd"]);
-		beam1.valid = json_data["transducers"][1]["beam_valid"];
-			
-		beam2.id = json_data["transducers"][2]["id"];
-		beam2.velocity = double(json_data["transducers"][2]["velocity"]);
-		beam2.distance = double(json_data["transducers"][2]["distance"]);
-		beam2.rssi = double(json_data["transducers"][2]["rssi"]);
-		beam2.nsd = double(json_data["transducers"][2]["nsd"]);
-		beam2.valid = json_data["transducers"][2]["beam_valid"];
-			
-		beam3.id = json_data["transducers"][3]["id"];
-		beam3.velocity = double(json_data["transducers"][3]["velocity"]);
-		beam3.distance = double(json_data["transducers"][3]["distance"]);
-		beam3.rssi = double(json_data["transducers"][3]["rssi"]);
-		beam3.nsd = double(json_data["transducers"][3]["nsd"]);
-		beam3.valid = json_data["transducers"][3]["beam_valid"];
-		    
-		dvl.beams = {beam0, beam1, beam2, beam3};
 		dvl_pub_report->publish(dvl);
 		
             }
@@ -263,17 +239,26 @@ void LifecycleDVL::on_timer()
 		//std::cout << std::setw(4) << json_data << std::endl;
 		DVLDeadReckoning.header.stamp = rclcpp_lifecycle::LifecycleNode::now();
 		DVLDeadReckoning.header.frame_id = "dvl_A50_position_link";
-		DVLDeadReckoning.time = double(json_data["ts"]);
-		DVLDeadReckoning.position.x = double(json_data["x"]);
-		DVLDeadReckoning.position.y = double(json_data["y"]);
-		DVLDeadReckoning.position.z = double(json_data["z"]);
-		DVLDeadReckoning.pos_std = double(json_data["std"]);
-		DVLDeadReckoning.roll = double(json_data["roll"]);
-		DVLDeadReckoning.pitch = double(json_data["pitch"]);
-		DVLDeadReckoning.yaw = double(json_data["yaw"]);
-		DVLDeadReckoning.type = json_data["type"];
-		DVLDeadReckoning.status = json_data["status"];
-		DVLDeadReckoning.format = json_data["format"];
+		DVLDeadReckoning.child_frame_id = "dvl_A50_report_link";
+		DVLDeadReckoning.pose.pose.position.x = double(json_data["x"]);
+		DVLDeadReckoning.pose.pose.position.y = double(json_data["y"]);
+		DVLDeadReckoning.pose.pose.position.z = double(json_data["z"]);
+		{
+			const double roll  = double(json_data["roll"])  * M_PI / 180.0;
+			const double pitch = double(json_data["pitch"]) * M_PI / 180.0;
+			const double yaw   = double(json_data["yaw"])   * M_PI / 180.0;
+			const double cr = cos(roll*0.5),  sr = sin(roll*0.5);
+			const double cp = cos(pitch*0.5), sp = sin(pitch*0.5);
+			const double cy = cos(yaw*0.5),   sy = sin(yaw*0.5);
+			DVLDeadReckoning.pose.pose.orientation.w = cr*cp*cy + sr*sp*sy;
+			DVLDeadReckoning.pose.pose.orientation.x = sr*cp*cy - cr*sp*sy;
+			DVLDeadReckoning.pose.pose.orientation.y = cr*sp*cy + sr*cp*sy;
+			DVLDeadReckoning.pose.pose.orientation.z = cr*cp*sy - sr*sp*cy;
+			const double var = double(json_data["std"]) * double(json_data["std"]);
+			DVLDeadReckoning.pose.covariance[0]  = var;
+			DVLDeadReckoning.pose.covariance[7]  = var;
+			DVLDeadReckoning.pose.covariance[14] = var;
+		}
 		dvl_pub_pos->publish(DVLDeadReckoning);
 	    }
     	

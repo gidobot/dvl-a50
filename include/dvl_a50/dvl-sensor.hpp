@@ -17,12 +17,25 @@
 #include "dvl_a50/tcpsocket.hpp"
 
 #include <string>
-#include "dvl_msgs/msg/dvl.hpp"
-#include "dvl_msgs/msg/dvl_beam.hpp"
-#include "dvl_msgs/msg/dvldr.hpp"
-#include "dvl_msgs/msg/config_command.hpp"
-#include "dvl_msgs/msg/command_response.hpp"
-#include "dvl_msgs/msg/config_status.hpp"
+// STANDARD MESSAGES, NOT A PRIVATE PACKAGE.
+//
+// The velocity report was dvl_msgs/DVL, a type defined by this driver and
+// understood by nothing else. Downstream consumers therefore had to depend on
+// the driver's message package to read a velocity -- and in practice a
+// consumer written against marine_acoustic_msgs/Dvl, which is what the
+// simulator publishes, simply never received anything. Same quantity, unrelated
+// type, and a subscription that silently never fires.
+//
+// marine_acoustic_msgs/Dvl carries everything dvl_msgs/DVL did that a consumer
+// needs, including per-beam ranges, velocities and quality, and adds
+// num_good_beams -- which matters here, because a two-beam solution is
+// under-determined and has been observed reporting 2.04 m/s against a true
+// 0.0000 m/s.
+#include "marine_acoustic_msgs/msg/dvl.hpp"
+#include "nav_msgs/msg/odometry.hpp"
+#include "std_msgs/msg/string.hpp"
+#include "diagnostic_msgs/msg/diagnostic_status.hpp"
+#include "diagnostic_msgs/msg/key_value.hpp"
 
 #include "dvl_a50/json/single_include/nlohmann/json.hpp"
 #include <iomanip>
@@ -70,11 +83,11 @@ private:
     
     rclcpp::TimerBase::SharedPtr timer_receive;
     rclcpp::TimerBase::SharedPtr timer_send;
-    rclcpp::Publisher<dvl_msgs::msg::DVL>::SharedPtr dvl_pub_report;
-    rclcpp::Publisher<dvl_msgs::msg::DVLDR>::SharedPtr dvl_pub_pos;
-    rclcpp::Publisher<dvl_msgs::msg::CommandResponse>::SharedPtr dvl_pub_command_response;
-    rclcpp::Publisher<dvl_msgs::msg::ConfigStatus>::SharedPtr dvl_pub_config_status;
-    rclcpp::Subscription<dvl_msgs::msg::ConfigCommand>::SharedPtr dvl_sub_config_command;
+    rclcpp::Publisher<marine_acoustic_msgs::msg::Dvl>::SharedPtr dvl_pub_report;
+    rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr dvl_pub_pos;
+    rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticStatus>::SharedPtr dvl_pub_command_response;
+    rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticStatus>::SharedPtr dvl_pub_config_status;
+    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr dvl_sub_config_command;
 
 
     void handle_receive();
@@ -84,7 +97,7 @@ private:
     void publish_config_status();
     void publish_command_response();
 
-    void command_subscriber(const dvl_msgs::msg::ConfigCommand::SharedPtr msg);
+    void command_subscriber(const std_msgs::msg::String::SharedPtr msg);
     void set_json_parameter(const std::string name, const std::string value);
     void send_parameter_to_sensor(const json &message);
 

@@ -15,9 +15,9 @@
 #include "dvl_a50/tcpsocket.hpp"
 
 #include <string>
-#include "dvl_msgs/msg/dvl.hpp"
-#include "dvl_msgs/msg/dvl_beam.hpp"
-#include "dvl_msgs/msg/dvldr.hpp"
+// Standard messages; see dvl-sensor.hpp for why.
+#include "marine_acoustic_msgs/msg/dvl.hpp"
+#include "nav_msgs/msg/odometry.hpp"
 
 //Json Library
 #include "dvl_a50/json/single_include/nlohmann/json.hpp"
@@ -124,16 +124,12 @@ private:
     
     
   // DVL message struct
-  dvl_msgs::msg::DVLBeam beam0;
-  dvl_msgs::msg::DVLBeam beam1;
-  dvl_msgs::msg::DVLBeam beam2;
-  dvl_msgs::msg::DVLBeam beam3;
     
-  dvl_msgs::msg::DVLDR DVLDeadReckoning;
-  dvl_msgs::msg::DVL dvl;
+  nav_msgs::msg::Odometry DVLDeadReckoning;
+  marine_acoustic_msgs::msg::Dvl dvl;
     
-  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<dvl_msgs::msg::DVL>> dvl_pub_report;
-  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<dvl_msgs::msg::DVLDR>> dvl_pub_pos;
+  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<marine_acoustic_msgs::msg::Dvl>> dvl_pub_report;
+  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Odometry>> dvl_pub_pos;
   
   //rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_;
   //rclcpp::TimerBase::SharedPtr timer_;

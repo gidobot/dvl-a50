@@ -21,7 +21,9 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_package(dvl_msgs REQUIRED)
+find_package(marine_acoustic_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
@@ -45,7 +47,9 @@ ament_target_dependencies(dvl_a50_component
   "lifecycle_msgs"
   "rclcpp_lifecycle"
   "std_msgs"
-  "dvl_msgs")
+  "marine_acoustic_msgs"
+  "nav_msgs"
+  "diagnostic_msgs")
   
 rclcpp_components_register_nodes(dvl_a50_component "composition::LifecycleDVL")
 set(node_plugins "${node_plugins}composition::LifecycleDVL;$<TARGET_FILE:dvl_a50_component>\n")
@@ -56,7 +60,9 @@ add_executable(${PROJECT_NAME}_sensor src/dvl-sensor.cpp)
 ament_target_dependencies(${PROJECT_NAME}_sensor rclcpp 
     "sensor_msgs" 
     "geometry_msgs" 
-    "dvl_msgs")
+    "marine_acoustic_msgs"
+  "nav_msgs"
+  "diagnostic_msgs")
 
 
 #Install C++ targets

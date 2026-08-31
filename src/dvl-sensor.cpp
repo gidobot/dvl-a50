@@ -24,11 +24,15 @@ Node("dvl_a50_node")
     timer_receive = this->create_wall_timer(std::chrono::milliseconds(50),std::bind(&DVL_A50::handle_receive, this));
 
     //Publishers
-    dvl_pub_report = this->create_publisher<dvl_msgs::msg::DVL>("dvl/data", qos);
-    dvl_pub_pos = this->create_publisher<dvl_msgs::msg::DVLDR>("dvl/position", qos);
-    dvl_pub_config_status = this->create_publisher<dvl_msgs::msg::ConfigStatus>("dvl/config/status", qos);
-    dvl_pub_command_response = this->create_publisher<dvl_msgs::msg::CommandResponse>("dvl/command/response", qos);
-    dvl_sub_config_command = this->create_subscription<dvl_msgs::msg::ConfigCommand>("dvl/config/command", qos, std::bind(&DVL_A50::command_subscriber, this, _1));
+    // "dvl/velocity", not "dvl/data". Consumers expecting a DVL velocity look
+    // for the former -- it is what the simulator publishes and what a
+    // marine_acoustic_msgs consumer defaults to -- so a driver publishing
+    // "dvl/data" agreed with nothing and failed by silence.
+    dvl_pub_report = this->create_publisher<marine_acoustic_msgs::msg::Dvl>("dvl/velocity", qos);
+    dvl_pub_pos = this->create_publisher<nav_msgs::msg::Odometry>("dvl/position", qos);
+    dvl_pub_config_status = this->create_publisher<diagnostic_msgs::msg::DiagnosticStatus>("dvl/config/status", qos);
+    dvl_pub_command_response = this->create_publisher<diagnostic_msgs::msg::DiagnosticStatus>("dvl/command/response", qos);
+    dvl_sub_config_command = this->create_subscription<std_msgs::msg::String>("dvl/config/command", qos, std::bind(&DVL_A50::command_subscriber, this, _1));
 
     this->declare_parameter<std::string>("dvl_ip_address", "192.168.194.95");
     this->declare_parameter<std::string>("velocity_frame_id", "dvl_A50/velocity_link");
@@ -145,80 +149,61 @@ void DVL_A50::handle_receive()
  */
 void DVL_A50::publish_vel_trans_report()
 {
-    // DVL message struct
-    dvl_msgs::msg::DVLBeam beam0;
-    dvl_msgs::msg::DVLBeam beam1;
-    dvl_msgs::msg::DVLBeam beam2;
-    dvl_msgs::msg::DVLBeam beam3;
-    dvl_msgs::msg::DVL dvl;
+    marine_acoustic_msgs::msg::Dvl dvl;
 
     dvl.header.stamp = Node::now();
     dvl.header.frame_id = velocity_frame_id;
-		
-    dvl.time = double(json_data["time"]);
-    dvl.time_of_validity = json_data["time_of_validity"].get<int64_t>();
-    dvl.time_of_transmission = json_data["time_of_transmission"].get<int64_t>();
+
+    // The A50 is a four-beam Janus piston array reporting bottom track.
+    dvl.velocity_mode = marine_acoustic_msgs::msg::Dvl::DVL_MODE_BOTTOM;
+    dvl.dvl_type = marine_acoustic_msgs::msg::Dvl::DVL_TYPE_PISTON;
 
     dvl.velocity.x = double(json_data["vx"]);
     dvl.velocity.y = double(json_data["vy"]);
     dvl.velocity.z = double(json_data["vz"]);
-    dvl.fom = double(json_data["fom"]);
-    double current_altitude = double(json_data["altitude"]);
-    dvl.velocity_valid = json_data["velocity_valid"];
-    
-    // Removed logic to add old altitude if not valid. Does not report accurately what is coming from the DVL.
-    // Logic should be implemented on a case by case basis.
-    dvl.altitude = current_altitude;
+    dvl.altitude = double(json_data["altitude"]);
+    dvl.beam_velocities_valid = json_data["velocity_valid"];
 
-
-    dvl.status = json_data["status"];
-    dvl.form = json_data["format"];
-
-    // Add covariance from message
-    std::vector<double> twistCovariance;
-
+    // Covariance arrives as a 3x3 nested array and the field is a flat 9.
+    // Left at zero when the device omits it rather than filled with a plausible
+    // constant: a consumer weights this velocity by its covariance, and an
+    // invented one is a lie it cannot detect.
     if (json_data.contains("covariance") && json_data["covariance"].is_array()) {
-        const auto& matrix = json_data["covariance"];
-        
-        for (const auto& row : matrix) {
+        size_t k = 0;
+        for (const auto& row : json_data["covariance"]) {
             if (!row.is_array()) continue;
             for (const auto& value : row) {
-                twistCovariance.push_back(value.get<double>());
+                if (k < 9) dvl.velocity_covar[k++] = value.get<double>();
             }
         }
     }
 
-    dvl.covariance = twistCovariance;
-			
-    beam0.id = json_data["transducers"][0]["id"];
-    beam0.velocity = double(json_data["transducers"][0]["velocity"]);
-    beam0.distance = double(json_data["transducers"][0]["distance"]);
-    beam0.rssi = double(json_data["transducers"][0]["rssi"]);
-    beam0.nsd = double(json_data["transducers"][0]["nsd"]);
-    beam0.valid = json_data["transducers"][0]["beam_valid"];
-			
-    beam1.id = json_data["transducers"][1]["id"];
-    beam1.velocity = double(json_data["transducers"][1]["velocity"]);
-    beam1.distance = double(json_data["transducers"][1]["distance"]);
-    beam1.rssi = double(json_data["transducers"][1]["rssi"]);
-    beam1.nsd = double(json_data["transducers"][1]["nsd"]);
-    beam1.valid = json_data["transducers"][1]["beam_valid"];
-			
-    beam2.id = json_data["transducers"][2]["id"];
-    beam2.velocity = double(json_data["transducers"][2]["velocity"]);
-    beam2.distance = double(json_data["transducers"][2]["distance"]);
-    beam2.rssi = double(json_data["transducers"][2]["rssi"]);
-    beam2.nsd = double(json_data["transducers"][2]["nsd"]);
-    beam2.valid = json_data["transducers"][2]["beam_valid"];
-			
-    beam3.id = json_data["transducers"][3]["id"];
-    beam3.velocity = double(json_data["transducers"][3]["velocity"]);
-    beam3.distance = double(json_data["transducers"][3]["distance"]);
-    beam3.rssi = double(json_data["transducers"][3]["rssi"]);
-    beam3.nsd = double(json_data["transducers"][3]["nsd"]);
-    beam3.valid = json_data["transducers"][3]["beam_valid"];
-		    
-    dvl.beams = {beam0, beam1, beam2, beam3};
+    // PER-BEAM, AND num_good_beams IS THE FIELD THAT MATTERS.
+    //
+    // A four-beam DVL reporting two valid beams is under-determined, and this
+    // one has been observed reporting 2.04 m/s with the vehicle stationary and
+    // ground truth reading 0.0000. Consumers reject on beam count, so the count
+    // has to be real: it is derived from each transducer's own beam_valid flag
+    // rather than from the overall velocity_valid, which stays true in exactly
+    // the degraded case worth rejecting.
+    uint8_t good = 0;
+    bool all_ranges = true;
+    for (size_t i = 0; i < 4 && i < json_data["transducers"].size(); ++i) {
+        const auto& t = json_data["transducers"][i];
+        const bool valid = t["beam_valid"];
+        dvl.beam_velocity[i] = static_cast<float>(double(t["velocity"]));
+        dvl.range[i] = double(t["distance"]);
+        dvl.beam_quality[i] = static_cast<float>(double(t["rssi"]));
+        if (valid) { ++good; } else { all_ranges = false; }
+    }
+    dvl.num_good_beams = good;
+    dvl.beam_ranges_valid = all_ranges;
+
+    // beam_unit_vec is LEFT ZERO. The device does not report its beam geometry
+    // and writing the datasheet angles here would put fabricated geometry
+    // somewhere very hard to notice. A consumer needing it should take it from
+    // the URDF, which is where this vehicle's sensor geometry already lives.
+
     dvl_pub_report->publish(dvl);
 }
 
@@ -227,37 +212,75 @@ void DVL_A50::publish_vel_trans_report()
  */
 void DVL_A50::publish_dead_reckoning_report()
 {
-    dvl_msgs::msg::DVLDR DVLDeadReckoning;
-    //std::cout << std::setw(4) << json_data << std::endl;
-    DVLDeadReckoning.header.stamp = Node::now();
-    DVLDeadReckoning.header.frame_id = position_frame_id;
-    DVLDeadReckoning.time = double(json_data["ts"]);
-    DVLDeadReckoning.position.x = double(json_data["x"]);
-    DVLDeadReckoning.position.y = double(json_data["y"]);
-    DVLDeadReckoning.position.z = double(json_data["z"]);
-    DVLDeadReckoning.pos_std = double(json_data["std"]);
-    DVLDeadReckoning.roll = double(json_data["roll"]);
-    DVLDeadReckoning.pitch = double(json_data["pitch"]);
-    DVLDeadReckoning.yaw = double(json_data["yaw"]);
-    DVLDeadReckoning.type = json_data["type"];
-    DVLDeadReckoning.status = json_data["status"];
-    DVLDeadReckoning.format = json_data["format"];
-    dvl_pub_pos->publish(DVLDeadReckoning);
+    // nav_msgs/Odometry rather than a private DVLDR: dead reckoning is a pose
+    // with a covariance, which is what Odometry is, and every ROS tool that
+    // plots or records a track already understands it.
+    nav_msgs::msg::Odometry dr;
+    dr.header.stamp = Node::now();
+    dr.header.frame_id = position_frame_id;
+    dr.child_frame_id = velocity_frame_id;
+    dr.pose.pose.position.x = double(json_data["x"]);
+    dr.pose.pose.position.y = double(json_data["y"]);
+    dr.pose.pose.position.z = double(json_data["z"]);
+
+    const double roll  = double(json_data["roll"])  * M_PI / 180.0;
+    const double pitch = double(json_data["pitch"]) * M_PI / 180.0;
+    const double yaw   = double(json_data["yaw"])   * M_PI / 180.0;
+    const double cr = cos(roll * 0.5),  sr = sin(roll * 0.5);
+    const double cp = cos(pitch * 0.5), sp = sin(pitch * 0.5);
+    const double cy = cos(yaw * 0.5),   sy = sin(yaw * 0.5);
+    dr.pose.pose.orientation.w = cr * cp * cy + sr * sp * sy;
+    dr.pose.pose.orientation.x = sr * cp * cy - cr * sp * sy;
+    dr.pose.pose.orientation.y = cr * sp * cy + sr * cp * sy;
+    dr.pose.pose.orientation.z = cr * cp * sy - sr * sp * cy;
+
+    // The device reports one standard deviation for position, so it goes on the
+    // three translational diagonals and nowhere else. The rotational block is
+    // left zero because the device says nothing about it.
+    const double var = double(json_data["std"]) * double(json_data["std"]);
+    dr.pose.covariance[0] = var;
+    dr.pose.covariance[7] = var;
+    dr.pose.covariance[14] = var;
+
+    dvl_pub_pos->publish(dr);
 }
 
 /*
  * Publish the command response
  */
+namespace {
+
+/// One key/value pair, for the diagnostic payloads below.
+diagnostic_msgs::msg::KeyValue kv(const std::string& key, const std::string& value)
+{
+    diagnostic_msgs::msg::KeyValue p;
+    p.key = key;
+    p.value = value;
+    return p;
+}
+
+}  // namespace
+
+// DEVICE ACKS AND CONFIGURATION AS DiagnosticStatus.
+//
+// Both were private types whose only job was to carry a success flag, an error
+// string and a handful of device settings -- which is what DiagnosticStatus is
+// for, and every ROS tool already renders it. The level field means a consumer
+// can tell a failed command from a successful one without knowing anything
+// about this device.
 void DVL_A50::publish_command_response()
 {
-    dvl_msgs::msg::CommandResponse command_resp;
-    command_resp.response_to = json_data["response_to"];
-    command_resp.success = json_data["success"];
-    command_resp.error_message = json_data["error_message"];
-    command_resp.result = 0;
-    command_resp.format = json_data["format"];
-    command_resp.type = json_data["type"];
-    dvl_pub_command_response->publish(command_resp);
+    diagnostic_msgs::msg::DiagnosticStatus msg;
+    const bool ok = json_data["success"];
+    msg.level = ok ? diagnostic_msgs::msg::DiagnosticStatus::OK
+                   : diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+    msg.name = "dvl_a50/command";
+    msg.hardware_id = ip_address;
+    msg.message = ok ? std::string("ok")
+                     : std::string(json_data["error_message"]);
+    msg.values.push_back(kv("response_to", json_data["response_to"]));
+    msg.values.push_back(kv("type", json_data["type"]));
+    dvl_pub_command_response->publish(msg);
 }
 
 /*
@@ -265,40 +288,62 @@ void DVL_A50::publish_command_response()
  */
 void DVL_A50::publish_config_status()
 {
-    dvl_msgs::msg::ConfigStatus status_msg;
-    status_msg.response_to = json_data["response_to"];
-    status_msg.success = json_data["success"];
-    status_msg.error_message = json_data["error_message"];
-    status_msg.speed_of_sound = json_data["result"]["speed_of_sound"];
-    status_msg.acoustic_enabled = json_data["result"]["acoustic_enabled"];
-    status_msg.dark_mode_enabled = json_data["result"]["dark_mode_enabled"];
-    status_msg.mounting_rotation_offset = json_data["result"]["mounting_rotation_offset"];
-    status_msg.range_mode = json_data["result"]["range_mode"];
-    status_msg.format = json_data["format"];
-    status_msg.type = json_data["type"];
-    dvl_pub_config_status->publish(status_msg);
+    diagnostic_msgs::msg::DiagnosticStatus msg;
+    const bool ok = json_data["success"];
+    msg.level = ok ? diagnostic_msgs::msg::DiagnosticStatus::OK
+                   : diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+    msg.name = "dvl_a50/config";
+    msg.hardware_id = ip_address;
+    msg.message = ok ? std::string("ok")
+                     : std::string(json_data["error_message"]);
+
+    const auto& r = json_data["result"];
+    msg.values.push_back(kv("speed_of_sound", std::to_string(int(r["speed_of_sound"]))));
+    msg.values.push_back(kv("acoustic_enabled", bool(r["acoustic_enabled"]) ? "true" : "false"));
+    msg.values.push_back(kv("dark_mode_enabled", bool(r["dark_mode_enabled"]) ? "true" : "false"));
+    msg.values.push_back(kv("mounting_rotation_offset",
+                            std::to_string(double(r["mounting_rotation_offset"]))));
+    msg.values.push_back(kv("range_mode", r["range_mode"]));
+    dvl_pub_config_status->publish(msg);
 }
 
 
-void DVL_A50::command_subscriber(const dvl_msgs::msg::ConfigCommand::SharedPtr msg)
+// JSON IN, JSON OUT. The device's command interface is already JSON and this
+// driver only forwards it, so a message carrying that JSON invents nothing. The
+// previous three-string type had to be understood by every operator tool and
+// was defined nowhere but here.
+void DVL_A50::command_subscriber(const std_msgs::msg::String::SharedPtr in)
 {
-    if(msg->command == "set_config")
-        this->set_json_parameter(msg->parameter_name, msg->parameter_value);
-    else if(msg->command == "get_config")
+    json msg;
+    try {
+        msg = json::parse(in->data);
+    } catch (const std::exception& e) {
+        RCLCPP_ERROR(get_logger(), "dvl/config/command is not valid JSON: %s", e.what());
+        return;
+    }
+    if (!msg.contains("command")) {
+        RCLCPP_ERROR(get_logger(), "dvl/config/command has no \"command\" field");
+        return;
+    }
+    const std::string command = msg["command"];
+
+    if(command == "set_config")
+        this->set_json_parameter(msg.value("parameter_name", ""), msg.value("parameter_value", ""));
+    else if(command == "get_config")
     {
         json command = {
             {"command", "get_config"}
         };
         this->send_parameter_to_sensor(command);
     }
-    else if(msg->command == "calibrate_gyro")
+    else if(command == "calibrate_gyro")
     {
         json command = {
             {"command", "calibrate_gyro"}
         };
         this->send_parameter_to_sensor(command);
     }
-    else if(msg->command == "reset_dead_reckoning")
+    else if(command == "reset_dead_reckoning")
     {
         json command = {
             {"command", "reset_dead_reckoning"}
