@@ -34,13 +34,13 @@ Node("dvl_a50_node")
     dvl_pub_command_response = this->create_publisher<diagnostic_msgs::msg::DiagnosticStatus>("dvl/command/response", qos);
     dvl_sub_config_command = this->create_subscription<std_msgs::msg::String>("dvl/config/command", qos, std::bind(&DVL_A50::command_subscriber, this, _1));
 
-    this->declare_parameter<std::string>("dvl_ip_address", "192.168.194.95");
+    this->declare_parameter<std::string>("dvl_address", "192.168.2.95");
     this->declare_parameter<std::string>("velocity_frame_id", "dvl_A50/velocity_link");
     this->declare_parameter<std::string>("position_frame_id", "dvl_A50/position_link");
     
     velocity_frame_id = this->get_parameter("velocity_frame_id").as_string();
     position_frame_id = this->get_parameter("position_frame_id").as_string();
-    ip_address = this->get_parameter("dvl_ip_address").as_string();
+    ip_address = this->get_parameter("dvl_address").as_string();
     RCLCPP_INFO(get_logger(), "IP_ADDRESS: '%s'", ip_address.c_str());
 
     //--- TCP/IP SOCKET ---- 

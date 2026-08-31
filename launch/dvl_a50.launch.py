@@ -5,7 +5,7 @@ import launch_ros.actions
 
 
 def generate_launch_description():
-    launch.actions.DeclareLaunchArgument('dvl_address', default_value='192.168.8.95'),
+    launch.actions.DeclareLaunchArgument('dvl_address', default_value='192.168.2.95'),
     dvl_a50 = launch_ros.actions.Node(
         package='dvl_a50', 
         executable='dvl_a50_sensor', 
