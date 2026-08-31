@@ -20,7 +20,7 @@ from launch_ros.descriptions import ComposableNode
 
 
 def generate_launch_description():
-    launch.actions.DeclareLaunchArgument('ip_address', default_value='192.168.194.95'),
+    launch.actions.DeclareLaunchArgument('dvl_address', default_value='192.168.2.95'),
     """Generate launch description with multiple components."""
     container = ComposableNodeContainer(
             name='my_container',
@@ -32,7 +32,7 @@ def generate_launch_description():
                     package='dvl_a50',
                     plugin='composition::LifecycleDVL',
                     name='dvl_a50_node',
-                    parameters=[{'dvl_ip_address': launch.substitutions.LaunchConfiguration('ip_address')}],
+                    parameters=[{'dvl_address': launch.substitutions.LaunchConfiguration('dvl_address')}],
                     extra_arguments=[{'use_intra_process_comms': True}])#,
                 #ComposableNode(
                 #    package='composition',
